@@ -154,16 +154,29 @@ export default function App() {
           ...allMessages.map((m) => ({ role: m.role, content: m.content })),
         ];
 
-        const resp = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ messages: apiMessages, apiKey }),
-        });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 25000);
+
+        let resp;
+        try {
+          resp = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ messages: apiMessages, apiKey }),
+            signal: controller.signal,
+          });
+        } finally {
+          clearTimeout(timeoutId);
+        }
 
         const data = await resp.json();
 
         if (data.error) {
           throw new Error(data.error);
+        }
+
+        if (!resp.ok) {
+          throw new Error('服务暂时不可用，请稍后重试');
         }
 
         // 替换 loading 消息为实际回复
@@ -181,6 +194,9 @@ export default function App() {
         }));
       } catch (err) {
         // 替换 loading 为错误消息
+        const errorMsg = err.name === 'AbortError'
+          ? '请求超时，请重新发送（可能是网络较慢，重试一般就好了）'
+          : `出错了：${err.message}`;
         updateConversation(activeId, (c) => ({
           ...c,
           messages: c.messages
@@ -188,7 +204,7 @@ export default function App() {
             .concat([
               {
                 role: 'assistant',
-                content: `出错了：${err.message}`,
+                content: errorMsg,
                 timestamp: new Date().toISOString(),
                 error: true,
               },

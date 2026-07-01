@@ -1,6 +1,18 @@
 // Netlify Function — 代理 DeepSeek API + 联网搜索
 
 const DEEPSEEK_API = 'https://api.deepseek.com/v1/chat/completions';
+const FETCH_TIMEOUT = 8000; // 8秒超时，留2秒给 Netlify 函数清理
+
+async function fetchWithTimeout(url, options, timeout = FETCH_TIMEOUT) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    const resp = await fetch(url, { ...options, signal: controller.signal });
+    return resp;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 // DuckDuckGo 搜索（免费，无需 API Key）
 async function webSearch(query) {
@@ -8,7 +20,7 @@ async function webSearch(query) {
 
   try {
     const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-    const resp = await fetch(url, {
+    const resp = await fetchWithTimeout(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       },
@@ -67,7 +79,7 @@ function formatSearchResults(results, query) {
 }
 
 async function callDeepSeek(messages, apiKey) {
-  const resp = await fetch(DEEPSEEK_API, {
+  const resp = await fetchWithTimeout(DEEPSEEK_API, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -144,7 +156,7 @@ exports.handler = async (event) => {
 
     const conversationMessages = [...messages];
 
-    let maxRounds = 3;
+    let maxRounds = 2;
     let lastResponse;
 
     while (maxRounds > 0) {
